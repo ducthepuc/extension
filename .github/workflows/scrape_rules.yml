@@ -1,0 +1,43 @@
+name: Scrape Roblox Deprecation Rules
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run scraper
+        run: npm run scrape
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: modern_rules
+          path: dist/modern_rules.json
+
+      - name: Publish GitHub Release
+        if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: rules-latest
+          name: Latest Roblox Deprecation Rules
+          generate_release_notes: true
+          files: dist/modern_rules.json
+          fail_on_unmatched_files: false
