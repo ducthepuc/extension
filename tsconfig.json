@@ -7,7 +7,10 @@
     "strict": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "allowSyntheticDefaultImports": true
+    "allowSyntheticDefaultImports": true,
+    "outDir": "out",
+    "rootDir": "src",
+    "sourceMap": true
   },
-  "include": ["scripts/**/*.ts"]
+  "include": ["src/**/*.ts", "fallback/**/*.json"]
 }

@@ -1,13 +1,39 @@
 {
-  "name": "scrape-rules",
+  "name": "roblox-modern-rules",
+  "displayName": "Roblox Modern Rules",
+  "description": "Deprecation-aware linting for Roblox Luau workspaces",
   "version": "1.0.0",
   "private": true,
-  "type": "module",
+  "publisher": "roblox-modern-rules",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Linters", "Other"],
+  "activationEvents": [
+    "workspaceContains:default.project.json",
+    "workspaceContains:*.project.json",
+    "onLanguage:lua",
+    "onLanguage:luau"
+  ],
+  "main": "./out/extension.js",
   "scripts": {
+    "vscode:prepublish": "bun run build",
+    "build": "bun build src/extension.ts --outdir out --target node --external vscode",
+    "watch": "bun build src/extension.ts --outdir out --target node --external vscode --watch",
+    "lint": "tsc --noEmit",
     "scrape": "bun scripts/compile-rules.ts"
   },
   "devDependencies": {
     "@types/bun": "^1.1.0",
+    "@types/vscode": "1.85.0",
     "typescript": "^5.4.0"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "roblox-modern-rules.syncRules",
+        "title": "Roblox Modern Rules: Sync rules cache"
+      }
+    ]
   }
 }

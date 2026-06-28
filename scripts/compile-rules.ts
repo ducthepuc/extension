@@ -128,20 +128,33 @@ function buildRules(dump: ApiDump, topics: DevForumTopic[]): ModernRule[] {
   for (const cls of dump.Classes ?? []) {
     const classDeprecated = isDeprecated(cls.Tags);
 
+    if (classDeprecated) {
+      const key = `Object.${cls.Name}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        rules.push({
+          pattern: `Object.${cls.Name}`,
+          replacement: "LOOKUP_REPLACEMENT",
+          explanation: `Heads up — "${cls.Name}" is flagged as deprecated in the Roblox engine. (engine tag: Deprecated)`,
+          severity: "warning",
+        });
+      }
+    }
+
     for (const member of cls.Members ?? []) {
       if (!member.Name) continue;
-      const key = `${cls.Name}.${member.Name}`;
+      const key = `Object.${member.Name}`;
       if (seen.has(key)) continue;
 
       const memberDeprecated = isDeprecated(member.Tags);
-      if (!classDeprecated && !memberDeprecated) continue;
+      if (!memberDeprecated) continue;
 
       seen.add(key);
       rules.push({
-        pattern: `${cls.Name}.${member.Name}`,
-        replacement: modernReplacement(member.Name),
-        explanation: explanationFor(member, topicMap),
-        severity: classDeprecated ? "error" : "warning",
+        pattern: `Object.${member.Name}`,
+        replacement: "LOOKUP_REPLACEMENT",
+        explanation: `Heads up — "${member.Name}" is flagged as deprecated in the Roblox engine. (engine tag: Deprecated)`,
+        severity: "warning",
       });
     }
   }
@@ -150,17 +163,43 @@ function buildRules(dump: ApiDump, topics: DevForumTopic[]): ModernRule[] {
   return rules;
 }
 
-async function writeOutputs(rules: ModernRule[]): Promise<void> {
-  const data = { rules };
-  const distPath = "dist/modern_rules.json";
-  await Bun.write(distPath, JSON.stringify(data, null, 2));
-  console.log(`[scrape] Wrote ${distPath}`);
+function buildValidApiMap(dump: ApiDump): Record<string, string> {
+  const map: Record<string, string> = {};
+
+  for (const cls of dump.Classes ?? []) {
+    if (cls.Name && !isDeprecated(cls.Tags)) {
+      const lower = cls.Name.toLowerCase();
+      if (!(lower in map)) map[lower] = cls.Name;
+    }
+
+    for (const member of cls.Members ?? []) {
+      if (!member.Name) continue;
+      if (isDeprecated(member.Tags)) continue;
+      const lower = member.Name.toLowerCase();
+      if (!(lower in map)) map[lower] = member.Name;
+    }
+  }
+
+  console.log(`[scrape] Compiled ${Object.keys(map).length} valid API entries`);
+  return map;
+}
+
+async function writeOutputs(
+  rules: ModernRule[],
+  validApiMap: Record<string, string>
+): Promise<void> {
+  await Bun.write("dist/modern_rules.json", JSON.stringify({ rules }));
+  console.log(`[scrape] Wrote dist/modern_rules.json`);
+
+  await Bun.write("dist/valid_api_map.json", JSON.stringify(validApiMap));
+  console.log(`[scrape] Wrote dist/valid_api_map.json`);
 }
 
 async function main(): Promise<void> {
   const [dump, topics] = await Promise.all([fetchApiDump(), fetchDevForumTopics()]);
   const rules = buildRules(dump, topics);
-  await writeOutputs(rules);
+  const validApiMap = buildValidApiMap(dump);
+  await writeOutputs(rules, validApiMap);
 }
 
 main().catch((err) => {
