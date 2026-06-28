@@ -47,10 +47,13 @@ async function fetchApiDump(): Promise<ApiDump> {
 
 async function fetchDevForumTopics(): Promise<DevForumTopic[]> {
   console.log(`[scrape] Fetching devforum announcements`);
-  const url = `${DEVFORUM_BASE}/c/announcements.json`;
+  const url = `${DEVFORUM_BASE}/c/updates/announcements/36.json`;
   try {
     const res = await fetch(url, {
-      headers: { "User-Agent": "extension-scraper/1.0" },
+      headers: {
+        "User-Agent": "extension-scraper/1.0",
+        Accept: "application/json",
+      },
     });
     if (!res.ok) {
       console.warn(`[scrape] Devforum responded ${res.status}; continuing without context`);
@@ -148,24 +151,10 @@ function buildRules(dump: ApiDump, topics: DevForumTopic[]): ModernRule[] {
 }
 
 async function writeOutputs(rules: ModernRule[]): Promise<void> {
-  const payload = { rules };
-  const json = JSON.stringify(payload, null, 2);
-
+  const data = { rules };
   const distPath = "dist/modern_rules.json";
-  await Bun.write(distPath, json).catch(async () => {
-    const fs = await import("node:fs/promises");
-    await fs.mkdir("dist", { recursive: true });
-    await fs.writeFile(distPath, json, "utf8");
-  });
-  console.log(`[scrape] Wrote ${distPath} (${json.length} bytes)`);
-
-  try {
-    const fs = await import("node:fs/promises");
-    await fs.mkdir("dist", { recursive: true });
-    await fs.writeFile(distPath, json, "utf8");
-  } catch {
-    /* already written */
-  }
+  await Bun.write(distPath, JSON.stringify(data, null, 2));
+  console.log(`[scrape] Wrote ${distPath}`);
 }
 
 async function main(): Promise<void> {
