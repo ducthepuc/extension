@@ -1,19 +1,24 @@
 {
-  "name": "roblox-modern-rules",
-  "displayName": "Roblox Modern Rules",
+  "name": "roblox-builder-rules",
+  "displayName": "Roblox Builder Rules",
   "description": "Deprecation-aware linting for Roblox Luau workspaces",
   "version": "1.0.0",
   "private": true,
-  "publisher": "roblox-modern-rules",
+  "publisher": "roblox-builder-rules",
   "engines": {
     "vscode": "^1.85.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ducthepuc/extension.git"
   },
   "categories": ["Linters", "Other"],
   "activationEvents": [
     "workspaceContains:default.project.json",
     "workspaceContains:*.project.json",
     "onLanguage:lua",
-    "onLanguage:luau"
+    "onLanguage:luau",
+    "onView:builder.apipediaView"
   ],
   "main": "./out/extension.js",
   "scripts": {
@@ -31,9 +36,27 @@
   "contributes": {
     "commands": [
       {
-        "command": "roblox-modern-rules.syncRules",
-        "title": "Roblox Modern Rules: Sync rules cache"
+        "command": "roblox-builder-rules.syncRules",
+        "title": "Roblox Builder Rules: Sync rules cache"
       }
-    ]
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "builder-apipedia",
+          "title": "Builder APIpedia",
+          "icon": "media/apipedia-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "builder-apipedia": [
+        {
+          "type": "webview",
+          "id": "builder.apipediaView",
+          "name": "Builder APIpedia"
+        }
+      ]
+    }
   }
 }

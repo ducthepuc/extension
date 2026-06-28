@@ -191,7 +191,7 @@ async function writeOutputs(
   await Bun.write("dist/modern_rules.json", JSON.stringify({ rules }));
   console.log(`[scrape] Wrote dist/modern_rules.json`);
 
-  await Bun.write("dist/valid_api_map.json", JSON.stringify(validApiMap));
+  await Bun.write("dist/valid_api_map.json", JSON.stringify(validApiMap, null, 2));
   console.log(`[scrape] Wrote dist/valid_api_map.json`);
 }
 

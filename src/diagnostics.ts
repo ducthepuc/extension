@@ -1,23 +1,13 @@
 import * as vscode from "vscode";
+import { RULES_STORAGE_KEY, type ModernRule, type RulesPayload } from "./ruleStore";
 
-interface ModernRule {
-  pattern: string;
-  replacement: string;
-  explanation: string;
-  severity: "warning" | "error" | "info";
+export const BUILDER_PREFIX = "🤖 [Builder] Outdated Practice: ";
+
+export interface BuilderDiagnostic extends vscode.Diagnostic {
+  builderRule?: ModernRule;
 }
 
-interface RulesPayload {
-  rules: ModernRule[];
-}
-
-export const JARVIS_PREFIX = "🤖 [Jarvis] Outdated Practice: ";
-
-export interface JarvisDiagnostic extends vscode.Diagnostic {
-  jarvisRule?: ModernRule;
-}
-
-const STORAGE_KEY = "modern_rules_cache";
+const STORAGE_KEY = RULES_STORAGE_KEY;
 
 function loadRules(context: vscode.ExtensionContext): ModernRule[] {
   const raw = context.globalState.get<string>(STORAGE_KEY);
@@ -132,12 +122,12 @@ export function refreshDiagnostics(
 
       const diagnostic = new vscode.Diagnostic(
         range,
-        JARVIS_PREFIX + rule.pattern,
+        BUILDER_PREFIX + rule.pattern,
         severityOf(rule)
-      ) as JarvisDiagnostic;
+      ) as BuilderDiagnostic;
       diagnostic.code = rule.replacement;
-      diagnostic.source = "roblox-modern-rules";
-      diagnostic.jarvisRule = rule;
+      diagnostic.source = "roblox-builder-rules";
+      diagnostic.builderRule = rule;
       diagnostics.push(diagnostic);
 
       if (re.lastIndex === startOffset) re.lastIndex++;

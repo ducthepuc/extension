@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { RULES_STORAGE_KEY, API_MAP_STORAGE_KEY } from "./ruleStore";
 
 interface ModernRule {
   pattern: string;
@@ -11,11 +12,16 @@ interface RulesPayload {
   rules: ModernRule[];
 }
 
-const STORAGE_KEY = "modern_rules_cache";
+const STORAGE_KEY = RULES_STORAGE_KEY;
+const API_MAP_KEY = API_MAP_STORAGE_KEY;
 const FALLBACK_RULES_URL =
   "https://github.com/ducthepuc/extension/releases/download/rules-latest/modern_rules.json";
-const RAW_DOWNLOAD_URL =
+const FALLBACK_API_MAP_URL =
+  "https://github.com/ducthepuc/extension/releases/download/rules-latest/valid_api_map.json";
+const RAW_RULES_URL =
   "https://raw.githubusercontent.com/ducthepuc/extension/main/fallback/modern_rules.json";
+const RAW_API_MAP_URL =
+  "https://raw.githubusercontent.com/ducthepuc/extension/main/fallback/valid_api_map.json";
 
 async function isRobloxWorkspace(): Promise<boolean> {
   const folders = vscode.workspace.workspaceFolders;
@@ -39,40 +45,74 @@ async function isRobloxWorkspace(): Promise<boolean> {
   return false;
 }
 
-async function fetchRemoteRules(
+async function fetchRemoteJson(
   url: string,
   token: vscode.CancellationToken
-): Promise<RulesPayload | null> {
+): Promise<unknown | null> {
   const controller = new AbortController();
   token.onCancellationRequested(() => controller.abort());
   try {
-    console.log(`[syncManager] Fetching remote rules: ${url}`);
+    console.log(`[syncManager] Fetching remote: ${url}`);
     const res = await fetch(url, {
       signal: controller.signal,
-      headers: { "User-Agent": "roblox-modern-rules-extension/1.0" },
+      headers: { "User-Agent": "roblox-builder-rules-extension/1.0" },
     });
     if (!res.ok) {
       console.warn(`[syncManager] Remote returned ${res.status} for ${url}`);
       return null;
     }
-    const payload = (await res.json()) as RulesPayload;
-    console.log(`[syncManager] Fetched ${payload.rules?.length ?? 0} rules from ${url}`);
-    return payload;
+    return await res.json();
   } catch (err) {
     console.error(`[syncManager] Network error fetching ${url}: ${(err as Error).message}`);
     return null;
   }
 }
 
+function fetchRemoteRules(
+  url: string,
+  token: vscode.CancellationToken
+): Promise<RulesPayload | null> {
+  return fetchRemoteJson(url, token) as Promise<RulesPayload | null>;
+}
+
+function fetchRemoteApiMap(
+  url: string,
+  token: vscode.CancellationToken
+): Promise<Record<string, string> | null> {
+  return fetchRemoteJson(url, token) as Promise<Record<string, string> | null>;
+}
+
 async function loadBundledFallback(
+  context: vscode.ExtensionContext,
+  filename: string
+): Promise<string> {
+  console.log(`[syncManager] Loading bundled fallback: fallback/${filename}`);
+  const uri = vscode.Uri.joinPath(context.extensionUri, "fallback", filename);
+  const bytes = await vscode.workspace.fs.readFile(uri);
+  return new TextDecoder().decode(bytes);
+}
+
+async function loadBundledRules(
   context: vscode.ExtensionContext
 ): Promise<RulesPayload> {
-  console.log("[syncManager] Loading bundled fallback rules from extension assets");
-  const uri = vscode.Uri.joinPath(context.extensionUri, "fallback", "modern_rules.json");
-  const bytes = await vscode.workspace.fs.readFile(uri);
-  const payload = JSON.parse(new TextDecoder().decode(bytes)) as RulesPayload;
+  const raw = await loadBundledFallback(context, "modern_rules.json");
+  const payload = JSON.parse(raw) as RulesPayload;
   console.log(`[syncManager] Fallback loaded: ${payload.rules.length} rules`);
   return payload;
+}
+
+async function loadBundledApiMap(
+  context: vscode.ExtensionContext
+): Promise<Record<string, string>> {
+  try {
+    const raw = await loadBundledFallback(context, "valid_api_map.json");
+    const parsed = JSON.parse(raw);
+    console.log(`[syncManager] Fallback API map loaded: ${Object.keys(parsed).length} entries`);
+    return parsed as Record<string, string>;
+  } catch (err) {
+    console.warn("[syncManager] No bundled API map fallback — skipping");
+    return {};
+  }
 }
 
 function rulesChanged(
@@ -130,19 +170,34 @@ async function syncRules(
   const cachedRaw = context.globalState.get<string>(STORAGE_KEY);
   const cached = parseCachedPayload(cachedRaw);
 
-  console.log("[syncManager] Attempting release asset download");
-  const fetched =
+  console.log("[syncManager] Attempting release asset download (rules)");
+  const fetchedRules =
     (await fetchRemoteRules(FALLBACK_RULES_URL, token)) ??
-    (await fetchRemoteRules(RAW_DOWNLOAD_URL, token));
+    (await fetchRemoteRules(RAW_RULES_URL, token));
 
-  if (!fetched) {
-    console.log("[syncManager] All remote sources failed — keeping existing cache");
-    return;
+  if (fetchedRules) {
+    if (rulesChanged(cached, fetchedRules)) {
+      await context.globalState.update(STORAGE_KEY, JSON.stringify(fetchedRules));
+      console.log("[syncManager] Rules cache updated successfully");
+    }
+  } else {
+    console.log("[syncManager] Rules sources failed — keeping existing rules cache");
   }
 
-  if (rulesChanged(cached, fetched)) {
-    await context.globalState.update(STORAGE_KEY, JSON.stringify(fetched));
-    console.log("[syncManager] Rules cache updated successfully");
+  console.log("[syncManager] Attempting release asset download (api map)");
+  const cachedMapRaw = context.globalState.get<string>(API_MAP_KEY);
+  const fetchedMap =
+    (await fetchRemoteApiMap(FALLBACK_API_MAP_URL, token)) ??
+    (await fetchRemoteApiMap(RAW_API_MAP_URL, token));
+
+  if (fetchedMap) {
+    const changed = cachedMapRaw !== JSON.stringify(fetchedMap);
+    if (changed) {
+      await context.globalState.update(API_MAP_KEY, JSON.stringify(fetchedMap));
+      console.log("[syncManager] API map cache updated successfully");
+    }
+  } else {
+    console.log("[syncManager] API map sources failed — keeping existing map cache");
   }
 }
 
@@ -157,7 +212,7 @@ export async function activateSyncManager(context: vscode.ExtensionContext): Pro
 
   console.log("[syncManager] Registering sync command");
   const disposable = vscode.commands.registerCommand(
-    "roblox-modern-rules.syncRules",
+    "roblox-builder-rules.syncRules",
     () => syncRules(context, new vscode.CancellationTokenSource().token)
   );
   context.subscriptions.push(disposable);
@@ -172,14 +227,28 @@ export async function activateSyncManager(context: vscode.ExtensionContext): Pro
     if (!parsed) {
       console.log("[syncManager] Cache empty after sync — loading bundled fallback");
       try {
-        const fallback = await loadBundledFallback(context);
+        const fallback = await loadBundledRules(context);
         await context.globalState.update(STORAGE_KEY, JSON.stringify(fallback));
         console.log("[syncManager] Bundled fallback persisted to globalState");
       } catch (err) {
-        console.error("[syncManager] Failed to load fallback:", (err as Error).message);
+        console.error("[syncManager] Failed to load rules fallback:", (err as Error).message);
       }
     } else {
       console.log(`[syncManager] Cache ready: ${parsed.rules.length} rules available`);
+    }
+
+    const mapRaw = context.globalState.get<string>(API_MAP_KEY);
+    if (!mapRaw) {
+      console.log("[syncManager] API map empty — loading bundled fallback");
+      try {
+        const fallbackMap = await loadBundledApiMap(context);
+        if (Object.keys(fallbackMap).length > 0) {
+          await context.globalState.update(API_MAP_KEY, JSON.stringify(fallbackMap));
+          console.log("[syncManager] Bundled API map persisted to globalState");
+        }
+      } catch (err) {
+        console.error("[syncManager] Failed to load API map fallback:", (err as Error).message);
+      }
     }
   });
 }
@@ -187,5 +256,5 @@ export async function activateSyncManager(context: vscode.ExtensionContext): Pro
 export function getFallbackRules(
   context: vscode.ExtensionContext
 ): Thenable<RulesPayload> {
-  return loadBundledFallback(context);
+  return loadBundledRules(context);
 }

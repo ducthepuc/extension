@@ -1,39 +1,56 @@
 import * as vscode from "vscode";
-import { JARVIS_PREFIX, JarvisDiagnostic } from "./diagnostics";
+import { BUILDER_PREFIX, BuilderDiagnostic } from "./diagnostics";
+import { loadCachedApiMap, resolveReplacement, extractMemberName } from "./ruleStore";
 
-const QUICKFIX_TITLE = "💡 Modernize code via Jarvis";
+const QUICKFIX_TITLE = "💡 Modernize code via Builder";
 
-function isJarvisDiagnostic(d: vscode.Diagnostic): d is JarvisDiagnostic {
-  return d.message.startsWith(JARVIS_PREFIX);
+function isBuilderDiagnostic(d: vscode.Diagnostic): d is BuilderDiagnostic {
+  return d.message.startsWith(BUILDER_PREFIX);
 }
 
-function findJarvisDiagnostics(
+function findBuilderDiagnostics(
   document: vscode.TextDocument,
   range: vscode.Range | vscode.Position
-): JarvisDiagnostic[] {
+): BuilderDiagnostic[] {
   const collection = vscode.languages.getDiagnostics(document.uri);
   const pos = range instanceof vscode.Position ? range : range.start;
   return collection.filter(
-    (d): d is JarvisDiagnostic =>
-      isJarvisDiagnostic(d) && d.range.contains(pos)
+    (d): d is BuilderDiagnostic =>
+      isBuilderDiagnostic(d) && d.range.contains(pos)
   );
 }
 
-class JarvisHoverProvider implements vscode.HoverProvider {
+class BuilderHoverProvider implements vscode.HoverProvider {
+  constructor(private readonly context: vscode.ExtensionContext) {}
+
   provideHover(
     document: vscode.TextDocument,
     position: vscode.Position,
     _token: vscode.CancellationToken
   ): vscode.ProviderResult<vscode.Hover> {
-    const hits = findJarvisDiagnostics(document, position);
+    const hits = findBuilderDiagnostics(document, position);
     if (hits.length === 0) return null;
 
+    const apiMap = loadCachedApiMap(this.context);
+
     const sections = hits.map((d) => {
-      const rule = d.jarvisRule!;
+      const rule = d.builderRule!;
+      const resolved = resolveReplacement(rule, apiMap);
+      const memberName = extractMemberName(rule.pattern);
+
       const oldBlock = rule.pattern.startsWith(":")
         ? `local part = workspace.Part\npart${rule.pattern}`
-        : `${rule.pattern}`;
-      const newBlock = rule.replacement;
+        : `local obj = workspace.Object\nprint(obj.${memberName})`;
+
+      let newBlock: string;
+      if (resolved.isIdentity) {
+        newBlock = `-- ⚠️ No direct modern equivalent.\n-- See explanation for structural guidance.`;
+      } else if (rule.pattern.startsWith("Object.")) {
+        newBlock = `local obj = workspace.Object\nprint(obj.${resolved.value})`;
+      } else {
+        newBlock = resolved.value;
+      }
+
       return [
         rule.explanation,
         "",
@@ -49,7 +66,7 @@ class JarvisHoverProvider implements vscode.HoverProvider {
       ].join("\n");
     });
 
-    const header = "🤖 **Jarvis Code Modernizer**\n\n---\n";
+    const header = "🤖 **Builder Code Modernizer**\n\n---\n";
     const body = sections.join("\n\n---\n\n");
     const markdown = new vscode.MarkdownString(header + body);
     markdown.isTrusted = true;
@@ -57,7 +74,9 @@ class JarvisHoverProvider implements vscode.HoverProvider {
   }
 }
 
-class JarvisCodeActionProvider implements vscode.CodeActionProvider {
+class BuilderCodeActionProvider implements vscode.CodeActionProvider {
+  constructor(private readonly context: vscode.ExtensionContext) {}
+
   provideCodeActions(
     document: vscode.TextDocument,
     range: vscode.Range | vscode.Selection,
@@ -66,14 +85,18 @@ class JarvisCodeActionProvider implements vscode.CodeActionProvider {
   ): vscode.ProviderResult<vscode.CodeAction[]> {
     const diagnostics =
       context.diagnostics.length > 0
-        ? context.diagnostics.filter(isJarvisDiagnostic) as JarvisDiagnostic[]
-        : findJarvisDiagnostics(document, range);
+        ? (context.diagnostics.filter(isBuilderDiagnostic) as BuilderDiagnostic[])
+        : findBuilderDiagnostics(document, range);
 
     if (diagnostics.length === 0) return [];
 
+    const apiMap = loadCachedApiMap(this.context);
+
     const actions: vscode.CodeAction[] = [];
     for (const d of diagnostics) {
-      const rule = d.jarvisRule!;
+      const rule = d.builderRule!;
+      const resolved = resolveReplacement(rule, apiMap);
+
       const action = new vscode.CodeAction(
         QUICKFIX_TITLE,
         vscode.CodeActionKind.QuickFix
@@ -81,13 +104,29 @@ class JarvisCodeActionProvider implements vscode.CodeActionProvider {
       action.diagnostics = [d];
       action.isPreferred = true;
 
+      if (resolved.isIdentity) {
+        action.disabled = { reason: "No modern replacement available for this deprecated API" };
+        actions.push(action);
+        continue;
+      }
+
       action.edit = new vscode.WorkspaceEdit();
 
       const startLine = d.range.start.line;
       const lineText = document.lineAt(startLine).text;
       const leadingWhitespace = lineText.match(/^[ \t]*/)?.[0] ?? "";
 
-      const replacementText = leadingWhitespace + rule.replacement;
+      let replacementText: string;
+      if (rule.pattern.startsWith("Object.")) {
+        const charBefore =
+          d.range.start.character > 0
+            ? lineText.charAt(d.range.start.character - 1)
+            : "";
+        const prefix = charBefore === "." ? "" : ".";
+        replacementText = prefix + resolved.value;
+      } else {
+        replacementText = leadingWhitespace + resolved.value;
+      }
 
       action.edit.replace(
         document.uri,
@@ -108,7 +147,7 @@ class JarvisCodeActionProvider implements vscode.CodeActionProvider {
 
 export function registerUIProviders(
   context: vscode.ExtensionContext,
-  diagnosticCollection: vscode.DiagnosticCollection
+  _diagnosticCollection: vscode.DiagnosticCollection
 ): void {
   const selector: vscode.DocumentSelector = [
     { language: "lua" },
@@ -117,13 +156,13 @@ export function registerUIProviders(
 
   const hover = vscode.languages.registerHoverProvider(
     selector,
-    new JarvisHoverProvider()
+    new BuilderHoverProvider(context)
   );
   context.subscriptions.push(hover);
 
   const codeAction = vscode.languages.registerCodeActionsProvider(
     selector,
-    new JarvisCodeActionProvider(),
+    new BuilderCodeActionProvider(context),
     {
       providedCodeActionKinds: [vscode.CodeActionKind.QuickFix],
     }

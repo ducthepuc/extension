@@ -33,7 +33,7 @@ export function activateEngine(context: vscode.ExtensionContext): void {
   setDiagnosticsContext(context);
 
   diagnosticCollection = vscode.languages.createDiagnosticCollection(
-    "roblox-modern-rules"
+    "roblox-builder-rules"
   );
   context.subscriptions.push(diagnosticCollection);
 

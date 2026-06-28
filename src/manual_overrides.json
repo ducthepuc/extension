@@ -1,0 +1,16 @@
+{
+  "remove": "Destroy",
+  "getprimarypartcframe": "PivotTo",
+  "setprimarypartcframe": "PivotTo",
+  "findpartonray": "workspace:Raycast",
+  "findpartonraywithignorelist": "workspace:Raycast",
+  "findpartonraywithwhitelist": "workspace:Raycast",
+  "loadanimation": "Animator:LoadAnimation",
+  "part0": "WeldConstraint / Attachments",
+  "part1": "WeldConstraint / Attachments",
+  "bodyvelocity": "LinearVelocity",
+  "bodygyro": "AlignOrientation",
+  "bodyposition": "AlignPosition",
+  "bodythrust": "VectorForce",
+  "bodyangularvelocity": "AngularVelocity"
+}
